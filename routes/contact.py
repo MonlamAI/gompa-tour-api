@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from prisma import Prisma
 from model.contact import ContactBase,ContactUpdate
 from Config.connection import get_db
+from lib.require_api_key import require_api_key
 from lib.upsert_translations import (
     assert_languages_exist,
     contact_translation_fields,
@@ -12,7 +13,7 @@ from lib.upsert_translations import (
 router = APIRouter(
 )
 
-@router.post("/")
+@router.post("/", dependencies=[Depends(require_api_key)])
 async def create_contact(contact: ContactBase, db: Prisma = Depends(get_db)):
     try:
         await assert_languages_exist(db, [t.languageCode for t in contact.translations])
@@ -56,7 +57,7 @@ async def get_contact(contact_id: str, db: Prisma = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Contact not found")
     return contact
 
-@router.delete("/{contact_id}")
+@router.delete("/{contact_id}", dependencies=[Depends(require_api_key)])
 async def get_contact(contact_id: str, db: Prisma = Depends(get_db)):
     contact = await db.contact.delete(
         where={"id": contact_id}
@@ -66,7 +67,7 @@ async def get_contact(contact_id: str, db: Prisma = Depends(get_db)):
     return contact
 
 
-@router.put("/{contact_id}")
+@router.put("/{contact_id}", dependencies=[Depends(require_api_key)])
 async def update_contact(contact_id: str, contact: ContactUpdate, db: Prisma = Depends(get_db)):
     existing_contact = await db.contact.find_unique(where={"id": contact_id})
     if not existing_contact:

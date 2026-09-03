@@ -4,6 +4,7 @@ from typing import List, Optional
 from prisma import Prisma
 from model.enum import Role
 from Config.connection import get_db
+from lib.require_api_key import require_api_key
 
 router = APIRouter()
 
@@ -36,14 +37,13 @@ async def create_user(user: UserCreate, db: Prisma = Depends(get_db)):
         existing_user = await db.user.find_unique(where={"email": user.email})
         
         if existing_user:
-            return existing_user  # Return existing user if found
-        
-        # Create new user if not found
+            return existing_user
+
         new_user = await db.user.create(
             data={
                 "username": user.username,
                 "email": user.email,
-                "role": user.role,
+                "role": Role.USER,
             }
         )
         return new_user
@@ -51,13 +51,13 @@ async def create_user(user: UserCreate, db: Prisma = Depends(get_db)):
         raise HTTPException(status_code=400, detail=str(e))
 
 # Get all users
-@router.get("/", response_model=List[UserResponse])
+@router.get("/", response_model=List[UserResponse], dependencies=[Depends(require_api_key)])
 async def get_users(db: Prisma = Depends(get_db)):
     users = await db.user.find_many()
     return users
 
 # Get a specific user by ID
-@router.get("/{user_email}", response_model=UserResponse)
+@router.get("/{user_email}", response_model=UserResponse, dependencies=[Depends(require_api_key)])
 async def get_user(user_email: str, db: Prisma = Depends(get_db)):
     user = await db.user.find_unique(where={"email": user_email})
     if not user:
@@ -65,7 +65,7 @@ async def get_user(user_email: str, db: Prisma = Depends(get_db)):
     return user
 
 # Update a user
-@router.put("/{user_email}", response_model=UserResponse)
+@router.put("/{user_email}", response_model=UserResponse, dependencies=[Depends(require_api_key)])
 async def update_user(user_email: str, user: UserUpdate, db: Prisma = Depends(get_db)):
     existing_user = await db.user.find_unique(where={"email": user_email})
     if not existing_user:
@@ -78,7 +78,7 @@ async def update_user(user_email: str, user: UserUpdate, db: Prisma = Depends(ge
     return updated_user
 
 # Delete a user
-@router.delete("/{user_email}")
+@router.delete("/{user_email}", dependencies=[Depends(require_api_key)])
 async def delete_user(user_email: str, db: Prisma = Depends(get_db)):
     user = await db.user.find_unique(where={"email": user_email})
     if not user:

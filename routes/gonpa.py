@@ -5,12 +5,13 @@ from Config.connection import get_db
 from typing import List
 from model.gonpa import GonpaCreate,GonpaTranslationCreate,GonpaUpdate
 from lib.upsert_translations import assert_languages_exist, upsert_content_translations
+from lib.require_api_key import require_api_key
 from model.enum import Sect, GonpaType
 
 router = APIRouter(
 )
 
-@router.post("/")
+@router.post("/", dependencies=[Depends(require_api_key)])
 async def create_gonpa(gonpa: GonpaCreate, db: Prisma = Depends(get_db)):
     try:
         await assert_languages_exist(db, [t.languageCode for t in gonpa.translations])
@@ -76,7 +77,7 @@ async def get_gonpa(gonpa_id: str, db: Prisma = Depends(get_db)):
     return gonpa
 
 
-@router.put("/{gonpa_id}")
+@router.put("/{gonpa_id}", dependencies=[Depends(require_api_key)])
 async def update_gonpa(
     gonpa_id: str, 
     gonpa_update: GonpaUpdate, 
@@ -149,7 +150,7 @@ async def get_gonpas(
 
 
 
-@router.post("/{gonpa_id}/translations")
+@router.post("/{gonpa_id}/translations", dependencies=[Depends(require_api_key)])
 async def add_gonpa_translation(
     gonpa_id: str,
     translation: GonpaTranslationCreate,
@@ -192,7 +193,7 @@ async def add_gonpa_translation(
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.delete("/{gonpa_id}/translations/{language_code}")
+@router.delete("/{gonpa_id}/translations/{language_code}", dependencies=[Depends(require_api_key)])
 async def delete_gonpa_translation(
 
     gonpa_id: str,
@@ -241,7 +242,7 @@ async def delete_gonpa_translation(
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     
-@router.delete("/{gonpa_id}")
+@router.delete("/{gonpa_id}", dependencies=[Depends(require_api_key)])
 async def delete_gompa_site(gonpa_id: str, db: Prisma = Depends(get_db)):
     try:
         existing_gonpa = await db.gonpa.find_first(where={"id": gonpa_id})
