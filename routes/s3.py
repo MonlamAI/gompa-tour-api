@@ -1,11 +1,12 @@
-from fastapi import APIRouter, File, UploadFile, HTTPException
+from fastapi import APIRouter, File, UploadFile, HTTPException, Depends
 from fastapi.responses import JSONResponse
-from lib.upload_file_to_s3 import upload_file_to_s3  # Assuming your existing file is named s3_upload.py
+from lib.upload_file_to_s3 import upload_file_to_s3
+from lib.require_api_key import require_api_key
 import uuid
 
 router = APIRouter()
 
-@router.post("/")
+@router.post("/", dependencies=[Depends(require_api_key)])
 async def upload_file(file: UploadFile = File(...)):
     try:
         # Generate a unique filename

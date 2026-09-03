@@ -4,10 +4,11 @@ from typing import Optional, List
 from Config.connection import get_db
 from model.festival import FestivalCreate,festivalTranslationCreate,FestivalTranslationUpdate,FestivalUpdate
 from lib.upsert_translations import assert_languages_exist, upsert_content_translations
+from lib.require_api_key import require_api_key
 
 router = APIRouter()
 
-@router.post("/")
+@router.post("/", dependencies=[Depends(require_api_key)])
 async def create_festival(festival: FestivalCreate, db: Prisma = Depends(get_db)):
     try:
         await assert_languages_exist(db, [t.languageCode for t in festival.translations])
@@ -68,7 +69,7 @@ async def get_festivals(
     )
     return festivals
 
-@router.post("/{festival_id}/translations")
+@router.post("/{festival_id}/translations", dependencies=[Depends(require_api_key)])
 async def add_festival_translation(
     festival_id: str,
     translation: festivalTranslationCreate,
@@ -111,7 +112,7 @@ async def add_festival_translation(
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.delete("/{festival_id}/translations/{language_code}")
+@router.delete("/{festival_id}/translations/{language_code}", dependencies=[Depends(require_api_key)])
 async def delete_festival_translation(
 
     festival_id: str,
@@ -160,7 +161,7 @@ async def delete_festival_translation(
         raise HTTPException(status_code=400, detail=str(e))
     
 
-@router.delete("/{fest_id}")
+@router.delete("/{fest_id}", dependencies=[Depends(require_api_key)])
 async def delete_fest_site(fest_id: str, db: Prisma = Depends(get_db)):
     try:
         existing_gonpa = await db.festival.find_first(where={"id": fest_id})
@@ -178,7 +179,7 @@ async def delete_fest_site(fest_id: str, db: Prisma = Depends(get_db)):
         raise HTTPException(status_code=400, detail=str(e))
     
 
-@router.put("/{festival_id}")
+@router.put("/{festival_id}", dependencies=[Depends(require_api_key)])
 async def update_festival(
     festival_id: str,
     festival_data: FestivalUpdate,

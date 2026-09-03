@@ -3,11 +3,12 @@ from prisma import Prisma
 from typing import List
 from Config.connection import get_db
 from model.language import LanguageBase
+from lib.require_api_key import require_api_key
 
 router = APIRouter(
 )
 
-@router.post("/", response_model=LanguageBase)
+@router.post("/", response_model=LanguageBase, dependencies=[Depends(require_api_key)])
 async def create_language(language: LanguageBase, db: Prisma = Depends(get_db)):
     try:
         created_language = await db.language.create(
@@ -24,7 +25,7 @@ async def create_language(language: LanguageBase, db: Prisma = Depends(get_db)):
 async def get_languages(db: Prisma = Depends(get_db)):
     return await db.language.find_many()
 
-@router.delete("/{language_code}", response_model=LanguageBase)
+@router.delete("/{language_code}", response_model=LanguageBase, dependencies=[Depends(require_api_key)])
 async def delete_language(language_code: str, db: Prisma = Depends(get_db)):
     try:
         # Find the language before deleting

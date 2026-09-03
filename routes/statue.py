@@ -28,11 +28,12 @@ from Config.connection import get_db
 
 from model.statue import StatueCreate, StatueResponse, StatueTranslationBase
 from lib.upsert_translations import assert_languages_exist, upsert_content_translations
+from lib.require_api_key import require_api_key
 
 router = APIRouter(
 )
 
-@router.post("/", response_model=StatueResponse)
+@router.post("/", response_model=StatueResponse, dependencies=[Depends(require_api_key)])
 async def create_statue(statue: StatueCreate, db: Prisma = Depends(get_db)):
     try:
         await assert_languages_exist(db, [t.languageCode for t in statue.translations])
@@ -96,7 +97,7 @@ async def get_statues(
     )
     return statues
 
-@router.put("/{statue_id}", response_model=StatueResponse)
+@router.put("/{statue_id}", response_model=StatueResponse, dependencies=[Depends(require_api_key)])
 async def update_statue(
     statue_id: str,
     statue: StatueCreate,
@@ -128,7 +129,7 @@ async def update_statue(
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.delete("/{statue_id}")
+@router.delete("/{statue_id}", dependencies=[Depends(require_api_key)])
 async def delete_statue(statue_id: str, db: Prisma = Depends(get_db)):
     try:
         await db.statue.delete(
@@ -139,7 +140,7 @@ async def delete_statue(statue_id: str, db: Prisma = Depends(get_db)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.post("/{statue_id}/translations")
+@router.post("/{statue_id}/translations", dependencies=[Depends(require_api_key)])
 async def add_statue_translation(
     statue_id: str,
     translation: StatueTranslationBase,
@@ -183,7 +184,7 @@ async def add_statue_translation(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.delete("/{statue_id}/translations/{language_code}")
+@router.delete("/{statue_id}/translations/{language_code}", dependencies=[Depends(require_api_key)])
 async def delete_statue_translation(
     statue_id: str,
     language_code: str,

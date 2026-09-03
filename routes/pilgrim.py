@@ -5,11 +5,12 @@ from Config.connection import get_db
 from typing import List
 from model.pilgrim import PilgrimSiteCreate,PilgrimSiteTranslationCreate,PilgrimSiteUpdate
 from lib.upsert_translations import assert_languages_exist, upsert_content_translations
+from lib.require_api_key import require_api_key
 
 router = APIRouter(
 )
 
-@router.post("/")
+@router.post("/", dependencies=[Depends(require_api_key)])
 async def create_pilgrim_site(pilgrim_site: PilgrimSiteCreate, db: Prisma = Depends(get_db)):
     try:
         await assert_languages_exist(db, [t.languageCode for t in pilgrim_site.translations])
@@ -64,7 +65,7 @@ async def get_pilgrim_site(site_id: str, db: Prisma = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Pilgrim site not found")
     return site
 
-@router.put("/{site_id}")
+@router.put("/{site_id}", dependencies=[Depends(require_api_key)])
 async def update_pilgrim_site(
     site_id: str, 
     site_update: PilgrimSiteUpdate, 
@@ -124,7 +125,7 @@ async def get_pilgrim_sites(db: Prisma = Depends(get_db)):
     )
     return sites 
 
-@router.delete("/{site_id}")
+@router.delete("/{site_id}", dependencies=[Depends(require_api_key)])
 async def delete_pilgrim_site(site_id: str, db: Prisma = Depends(get_db)):
     try:
         existing_site = await db.pilgrimsite.find_first(where={"id": site_id})
@@ -142,7 +143,7 @@ async def delete_pilgrim_site(site_id: str, db: Prisma = Depends(get_db)):
         raise HTTPException(status_code=400, detail=str(e))
     
 
-@router.post("/{site_id}/translations")
+@router.post("/{site_id}/translations", dependencies=[Depends(require_api_key)])
 async def add_pilgrim_site_translation(
     site_id: str,
     translation: PilgrimSiteTranslationCreate,
@@ -185,7 +186,7 @@ async def add_pilgrim_site_translation(
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.delete("/{site_id}/translations/{language_code}")
+@router.delete("/{site_id}/translations/{language_code}", dependencies=[Depends(require_api_key)])
 async def delete_pilgrim_site_translation(
     site_id: str,
     language_code: str,
