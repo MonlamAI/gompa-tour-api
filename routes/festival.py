@@ -3,12 +3,14 @@ from prisma import Prisma
 from typing import Optional, List
 from Config.connection import get_db
 from model.festival import FestivalCreate,festivalTranslationCreate,FestivalTranslationUpdate,FestivalUpdate
+from lib.upsert_translations import assert_languages_exist, upsert_content_translations
 
 router = APIRouter()
 
 @router.post("/")
 async def create_festival(festival: FestivalCreate, db: Prisma = Depends(get_db)):
     try:
+        await assert_languages_exist(db, [t.languageCode for t in festival.translations])
         translations_data = [
             {
                 "language": {"connect": {"code": t.languageCode}},
@@ -33,6 +35,8 @@ async def create_festival(festival: FestivalCreate, db: Prisma = Depends(get_db)
             }
         )
         return created_festival
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -75,7 +79,9 @@ async def add_festival_translation(
         existing_festival = await db.festival.find_first(where={"id": festival_id})
         if not existing_festival:
             raise HTTPException(status_code=404, detail="festival not found")
-            
+
+        await assert_languages_exist(db, [translation.languageCode])
+
         # Check if translation for this language already exists
         existing_translation = await db.festivaltranslation.find_first(
             where={
@@ -100,6 +106,8 @@ async def add_festival_translation(
             }
         )
         return new_translation
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -181,10 +189,15 @@ async def update_festival(
         if not existing_festival:
             raise HTTPException(status_code=404, detail="Festival not found")
 
-        if festival_data.translations:
-            await db.festivaltranslation.delete_many(where={"festivalId": festival_id})
-        
-        # Prepare update data
+        await upsert_content_translations(
+            db,
+            db.festivaltranslation,
+            parent_id_field="festivalId",
+            parent_id=festival_id,
+            parent_relation="festival",
+            translations=festival_data.translations,
+        )
+
         update_data = {}
         if festival_data.start_date:
             update_data["start_date"] = festival_data.start_date
@@ -193,32 +206,21 @@ async def update_festival(
         if festival_data.image:
             update_data["image"] = festival_data.image
 
-        translations_data = [
-            {
-                "languageCode": t.languageCode,
-                "name": t.name,
-                "description": t.description,
-                "description_audio": t.description_audio,
-            }
-            for t in festival_data.translations
-        ] if festival_data.translations else []
-        # Update festival details
+        if update_data:
+            await db.festival.update(
+                where={"id": festival_id},
+                data=update_data,
+            )
 
-
-        update_data["translations"] = {
-                "createMany": {
-                    "data": translations_data
-                }
-            } if translations_data else {}
-        
-        updated_festival = await db.festival.update(
+        updated_festival = await db.festival.find_unique(
             where={"id": festival_id},
-            data=update_data,
-            include={"translations": True}
+            include={"translations": True},
         )
 
         return {"message": "Festival updated successfully", "festival": updated_festival}
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
