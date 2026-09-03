@@ -27,6 +27,7 @@ from typing import List, Optional
 from Config.connection import get_db
 
 from model.statue import StatueCreate, StatueResponse, StatueTranslationBase
+from lib.upsert_translations import assert_languages_exist, upsert_content_translations
 
 router = APIRouter(
 )
@@ -34,6 +35,7 @@ router = APIRouter(
 @router.post("/", response_model=StatueResponse)
 async def create_statue(statue: StatueCreate, db: Prisma = Depends(get_db)):
     try:
+        await assert_languages_exist(db, [t.languageCode for t in statue.translations])
         translations_data = [
             {
                 "language": {"connect": {"code": t.languageCode}},
@@ -56,6 +58,8 @@ async def create_statue(statue: StatueCreate, db: Prisma = Depends(get_db)):
             }
         )
         return created_statue
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -99,33 +103,28 @@ async def update_statue(
     db: Prisma = Depends(get_db)
 ):
     try:
-        # First, delete existing translations
-        await db.statuetranslation.delete_many(
-            where={"statueId": statue_id}
+        existing = await db.statue.find_unique(where={"id": statue_id})
+        if not existing:
+            raise HTTPException(status_code=404, detail="Statue not found")
+
+        await upsert_content_translations(
+            db,
+            db.statuetranslation,
+            parent_id_field="statueId",
+            parent_id=statue_id,
+            parent_relation="statue",
+            translations=statue.translations,
         )
-        
-        # Then update the statue with new data
-        updated_statue = await db.statue.update(
+        await db.statue.update(
             where={"id": statue_id},
-            data={
-                "image": statue.image,
-                "translations": {
-                    "create": [
-                        {
-                            "language": {"connect": {"code": t.languageCode}},
-                            "name": t.name,
-                            "description": t.description,
-                            "description_audio": t.description_audio
-                        }
-                        for t in statue.translations
-                    ]
-                }
-            },
-            include={
-                "translations": True
-            }
+            data={"image": statue.image},
         )
-        return updated_statue
+        return await db.statue.find_unique(
+            where={"id": statue_id},
+            include={"translations": True},
+        )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -151,7 +150,9 @@ async def add_statue_translation(
         existing_statue = await db.statue.find_first(where={"id": statue_id})
         if not existing_statue:
             raise HTTPException(status_code=404, detail="Statue not found")
-            
+
+        await assert_languages_exist(db, [translation.languageCode])
+
         # Check if translation for this language already exists
         existing_translation = await db.statuetranslation.find_first(
             where={
@@ -176,6 +177,8 @@ async def add_statue_translation(
             }
         )
         return new_translation
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

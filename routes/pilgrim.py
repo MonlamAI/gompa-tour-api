@@ -4,6 +4,7 @@ from typing import Optional
 from Config.connection import get_db
 from typing import List
 from model.pilgrim import PilgrimSiteCreate,PilgrimSiteTranslationCreate,PilgrimSiteUpdate
+from lib.upsert_translations import assert_languages_exist, upsert_content_translations
 
 router = APIRouter(
 )
@@ -11,6 +12,7 @@ router = APIRouter(
 @router.post("/")
 async def create_pilgrim_site(pilgrim_site: PilgrimSiteCreate, db: Prisma = Depends(get_db)):
     try:
+        await assert_languages_exist(db, [t.languageCode for t in pilgrim_site.translations])
         translations_data = [
             {
                 "language": {"connect": {"code": t.languageCode}},
@@ -40,6 +42,8 @@ async def create_pilgrim_site(pilgrim_site: PilgrimSiteCreate, db: Prisma = Depe
 
         return created_site
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -72,44 +76,37 @@ async def update_pilgrim_site(
         if not existing_site:
             raise HTTPException(status_code=404, detail="Pilgrim site not found")
 
-        # Update translations by deleting old ones and inserting new ones
-        if site_update.translations:
-            await db.pilgrimsitetranslation.delete_many(where={"pilgrimSiteId": site_id})
-        
-        translations_data = [
-            {
-                "languageCode": t.languageCode,
-                "name": t.name,
-                "description": t.description,
-                "description_audio": t.description_audio,
-            }
-            for t in site_update.translations
-        ] if site_update.translations else []
+        await upsert_content_translations(
+            db,
+            db.pilgrimsitetranslation,
+            parent_id_field="pilgrimSiteId",
+            parent_id=site_id,
+            parent_relation="pilgrimSite",
+            translations=site_update.translations,
+        )
 
         update_data = {
             "image": site_update.image,
             "geo_location": site_update.geo_location,
-            "translations": {
-                "createMany": {
-                    "data": translations_data
-                }
-            } if translations_data else {}
         }
     
         if site_update.contactId:
             update_data["contact"] = {"connect": {"id": site_update.contactId}}
 
-        # Perform the update
-        updated_site = await db.pilgrimsite.update(
+        await db.pilgrimsite.update(
             where={"id": site_id},
             data=update_data,
+        )
+
+        return await db.pilgrimsite.find_unique(
+            where={"id": site_id},
             include={
                 "translations": True,
                 "contact": True
-            }
+            },
         )
-
-        return updated_site
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -156,6 +153,8 @@ async def add_pilgrim_site_translation(
         existing_site = await db.pilgrimsite.find_first(where={"id": site_id})
         if not existing_site:
             raise HTTPException(status_code=404, detail="Pilgrim site not found")
+
+        await assert_languages_exist(db, [translation.languageCode])
             
         # Check if translation for this language already exists
         existing_translation = await db.pilgrimsitetranslation.find_first(
@@ -181,6 +180,8 @@ async def add_pilgrim_site_translation(
             }
         )
         return new_translation
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

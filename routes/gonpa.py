@@ -4,6 +4,7 @@ from typing import Optional
 from Config.connection import get_db
 from typing import List
 from model.gonpa import GonpaCreate,GonpaTranslationCreate,GonpaUpdate
+from lib.upsert_translations import assert_languages_exist, upsert_content_translations
 from model.enum import Sect, GonpaType
 
 router = APIRouter(
@@ -12,6 +13,7 @@ router = APIRouter(
 @router.post("/")
 async def create_gonpa(gonpa: GonpaCreate, db: Prisma = Depends(get_db)):
     try:
+        await assert_languages_exist(db, [t.languageCode for t in gonpa.translations])
         translations_data = [
             {
                 "language": {"connect": {"code": t.languageCode}},
@@ -39,6 +41,8 @@ async def create_gonpa(gonpa: GonpaCreate, db: Prisma = Depends(get_db)):
             }
         )
         return created_gonpa
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -84,47 +88,37 @@ async def update_gonpa(
         if not existing_gonpa:
             raise HTTPException(status_code=404, detail="Gonpa not found")
 
-        # If translations are provided, delete old ones before inserting new ones
-        if gonpa_update.translations:
-            await db.gonpatranslation.delete_many(where={"gonpaId": gonpa_id})
+        await upsert_content_translations(
+            db,
+            db.gonpatranslation,
+            parent_id_field="gonpaId",
+            parent_id=gonpa_id,
+            parent_relation="gonpa",
+            translations=gonpa_update.translations,
+        )
 
-        # Correctly structured translation data for Prisma
-        translations_data = [
-            {
-                "languageCode": t.languageCode,
-                "name": t.name,
-                "description": t.description,
-                "description_audio": t.description_audio,
-            }
-            for t in gonpa_update.translations
-        ] if gonpa_update.translations else []
-
-        # Prepare update data
         update_data = {
             "image": gonpa_update.image,
             "geo_location": gonpa_update.geo_location,
             "sect": gonpa_update.sect,
             "type": gonpa_update.type,
-            "translations": {
-                "createMany": {
-                    "data": translations_data
-                }
-            } if translations_data else {}
         }
 
-        # Ensure `contact` is only updated if provided
         if gonpa_update.contactId:
             update_data["contact"] = {"connect": {"id": gonpa_update.contactId}}
 
-        # Perform the update
-        updated_gonpa = await db.gonpa.update(
+        await db.gonpa.update(
             where={"id": gonpa_id},
             data=update_data,
-            include={"translations": True, "contact": True}
         )
 
-        return updated_gonpa
+        return await db.gonpa.find_unique(
+            where={"id": gonpa_id},
+            include={"translations": True, "contact": True},
+        )
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     
@@ -166,6 +160,8 @@ async def add_gonpa_translation(
         existing_gonpa = await db.gonpa.find_first(where={"id": gonpa_id})
         if not existing_gonpa:
             raise HTTPException(status_code=404, detail="Gonpa not found")
+
+        await assert_languages_exist(db, [translation.languageCode])
             
         # Check if translation for this language already exists
         existing_translation = await db.gonpatranslation.find_first(
@@ -191,6 +187,8 @@ async def add_gonpa_translation(
             }
         )
         return new_translation
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
